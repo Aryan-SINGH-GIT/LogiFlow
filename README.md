@@ -48,7 +48,7 @@ An AI-powered web application for viewing, editing, and generating PDF logbooks.
    ```
 5. Start the backend development server:
    ```bash
-   uvicorn main:app --reload
+    uvicorn main:app --reload
    ```
    *The FastAPI backend will run on `http://localhost:8000`.*
 

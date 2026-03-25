@@ -3,9 +3,9 @@ Logbook AI generation route.
 """
 from fastapi import APIRouter, HTTPException
 
-from schemas import GenerateLogbookRequest, GenerateWeekLogbookRequest, WeekLogbookResponse
+from schemas import GenerateLogbookRequest, GenerateMonthLogbookRequest, MonthLogbookResponse
 from services.ai_service import generate_logbook_content
-from services.langgraph_service import run_weekly_generation_pipeline
+from services.langgraph_service import run_monthly_generation_pipeline
 
 router = APIRouter(tags=["Logbook"])
 
@@ -30,15 +30,15 @@ async def generate_logbook(request: GenerateLogbookRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/generate-week-logbook", response_model=WeekLogbookResponse, summary="Generate 5 days of logbook content using LangGraph")
-async def generate_week_logbook(request: GenerateWeekLogbookRequest):
+@router.post("/generate-month-logbook", response_model=MonthLogbookResponse, summary="Generate up to 20 days of logbook content using LangGraph")
+async def generate_month_logbook(request: GenerateMonthLogbookRequest):
     """
-    Call the LangGraph pipeline to generate 5 days of structured logbook content
-    based on the week's prompt, project description, and previous context.
-    Returns 5 full days of wraps content and a context string for next week.
+    Call the LangGraph pipeline to generate a month of structured logbook content
+    based on the month's prompt, project description, and previous context.
+    Returns generated content and a context string for next month.
     """
     try:
-        response = run_weekly_generation_pipeline(request)
+        response = run_monthly_generation_pipeline(request)
         return response
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))

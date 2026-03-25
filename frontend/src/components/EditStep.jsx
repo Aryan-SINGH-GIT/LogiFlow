@@ -11,7 +11,7 @@ export default function EditStep({
     pdfToOverlay,
     onCanvasClick,
     onBlockClick, onBlockMouseDown,
-    onEditMouseDown, onEditMouseUp,
+    onEditMouseDown,
     children,  // EditSidebar passed as children
 }) {
     return (
@@ -74,7 +74,6 @@ export default function EditStep({
                                     style={style}
                                     title="Click to edit · drag to move"
                                     onMouseDown={e => onEditMouseDown(e, edit._idx)}
-                                    onMouseUp={e => onEditMouseUp(e, edit._idx)}
                                 >
                                     {edit.text}
                                 </div>

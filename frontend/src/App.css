@@ -11,8 +11,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-secondary);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(10, 10, 15, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 100;
@@ -179,15 +181,17 @@
   padding: 24px 32px 48px;
   display: flex;
   justify-content: center;
+  align-items: flex-start;
+  gap: 32px;
 }
 
 /* ===== Card ===== */
 .card {
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-lg);
   padding: 32px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 
 .card-header h2 {
@@ -203,11 +207,11 @@
 
 /* ===== Upload Card ===== */
 .upload-card {
-  width: 480px;
+  width: 100%;
+  max-width: 480px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  align-self: flex-start;
 }
 
 /* ===== Dropzone ===== */
@@ -227,12 +231,14 @@
 .dropzone:hover,
 .dropzone.dragover {
   border-color: var(--accent);
-  background: rgba(108, 92, 231, 0.05);
+  background: rgba(37, 99, 235, 0.08);
+  box-shadow: 0 0 24px rgba(37, 99, 235, 0.2) inset;
 }
 
 .dropzone.has-file {
   border-color: var(--success);
-  background: rgba(0, 206, 201, 0.05);
+  background: rgba(16, 185, 129, 0.08);
+  box-shadow: 0 0 24px rgba(16, 185, 129, 0.2) inset;
 }
 
 .upload-icon {
@@ -351,7 +357,7 @@
   display: flex;
   gap: 24px;
   width: 100%;
-  max-width: 1200px;
+  max-width: 1600px;
   align-items: flex-start;
 }
 
@@ -383,33 +389,32 @@
 .canvas-container {
   position: relative;
   background: var(--bg-card);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: var(--radius-md);
-  overflow: auto;
-  max-height: calc(100vh - 220px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px;
+  overflow: visible;
+  padding: 24px;
 }
 
 .canvas-wrapper {
   position: relative;
   display: inline-block;
+  margin: auto;
 }
 
 .pdf-canvas {
   cursor: crosshair;
   display: block;
-  max-width: 100%;
+  max-width: none;
+  max-height: none;
   border-radius: 4px;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .canvas-hint {
-  margin-top: 8px;
-  font-size: 0.75rem;
-  color: var(--text-muted);
+  margin-top: 16px;
+  margin-bottom: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
   text-align: center;
 }
 
@@ -519,7 +524,7 @@
 
 /* ===== Editor Sidebar ===== */
 .editor-sidebar {
-  width: 320px;
+  width: 400px;
   flex-shrink: 0;
   position: sticky;
   top: 92px;
@@ -590,7 +595,8 @@
 
 /* ===== Download Card ===== */
 .download-card {
-  width: 480px;
+  width: 100%;
+  max-width: 480px;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -766,17 +772,24 @@
 }
 
 /* ===== AI Logbook Feature ===== */
+.ai-panel {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+}
+
 .btn.ai-btn {
-  background: linear-gradient(135deg, #f9a825, #e65100);
+  background: linear-gradient(135deg, var(--accent), #1d4ed8);
   color: #fff;
   font-weight: 700;
   border: none;
-  box-shadow: 0 4px 18px rgba(249, 168, 37, 0.35);
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
   transition: box-shadow 0.2s, transform 0.15s;
 }
 
 .btn.ai-btn:hover:not(:disabled) {
-  box-shadow: 0 6px 28px rgba(249, 168, 37, 0.55);
+  box-shadow: 0 6px 28px rgba(37, 99, 235, 0.55);
   transform: translateY(-1px);
 }
 

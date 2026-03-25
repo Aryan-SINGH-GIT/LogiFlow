@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { pdfjsLib, STEPS, LOGBOOK_ZONES, DAY_1_PAGE_INDEX } from './constants';
-import { uploadPdf, editPdf, extractText, generateWeekLogbook, getDownloadUrl } from './api';
+import { uploadPdf, editPdf, extractText, generateMonthLogbook, getDownloadUrl } from './api';
 import { useCoordHelpers, usePdfRenderer } from './hooks/usePdf';
 import { useDrag } from './hooks/useDrag';
 import UploadStep from './components/UploadStep';
@@ -12,8 +13,9 @@ import TextModal from './components/TextModal';
 import './App.css';
 
 export default function App() {
-  // ── Core state ──────────────────────────────────────────────────────────
-  const [step, setStep] = useState(0);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const step = location.pathname === '/' ? 0 : location.pathname === '/edit' ? 1 : 2;
   const [file, setFile] = useState(null);
   const [filename, setFilename] = useState('');
   const [pdfDoc, setPdfDoc] = useState(null);
@@ -26,25 +28,21 @@ export default function App() {
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
 
-  // ── Modal state ──────────────────────────────────────────────────────────
   const [modal, setModal] = useState({ open: false, x: 0, y: 0 });
   const [modalText, setModalText] = useState('');
   const [editingBlock, setEditingBlock] = useState(null);
 
-  // ── Drag state ───────────────────────────────────────────────────────────
   const [dragging, setDragging] = useState(null);
   const [dragPos, setDragPos] = useState(null);
 
-  // ── AI form state ────────────────────────────────────────────────────────
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', startDate: '', endDate: '', startPdfDay: 1 });
+  const abortControllerRef = useRef(null);
+  const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', dates: [], timeFrom: '09:00 AM', timeTo: '7:00 PM', department: 'Engineering Department', designation: 'Backend Developer Trainee', startPdfDay: 1 });
 
-  // ── Refs ─────────────────────────────────────────────────────────────────
   const canvasRef = useRef(null);
   const wrapperRef = useRef(null);
 
-  // ── Helpers & hooks ───────────────────────────────────────────────────────
   const showToast = useCallback((msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
@@ -54,11 +52,10 @@ export default function App() {
 
   usePdfRenderer(canvasRef, pdfDoc, currentPage, edits);
 
-  // Derived per-page data
   const currentBlocks = textBlocks.filter(b => b.page === currentPage);
   const currentEdits = edits.map((e, i) => ({ ...e, _idx: i })).filter(e => e.page === currentPage);
 
-  const { onEditMouseDown, onEditMouseUp, onBlockMouseDown } = useDrag({
+  const { onEditMouseDown, onBlockMouseDown } = useDrag({
     dragging, setDragging, dragPos, setDragPos,
     edits, setEdits,
     setEditingBlock, setModalText, setModal,
@@ -67,7 +64,6 @@ export default function App() {
     pixelToPdf, showToast,
   });
 
-  // ── Upload ────────────────────────────────────────────────────────────────
   const doUpload = async (f = file) => {
     const data = await uploadPdf(f);
     setFilename(data.filename);
@@ -85,7 +81,7 @@ export default function App() {
     setLoading(true); setError('');
     try {
       await doUpload();
-      setStep(1);
+      navigate('/edit');
       showToast('PDF uploaded — click text to edit, drag to move, or click empty area to add.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Upload failed.');
@@ -97,14 +93,13 @@ export default function App() {
     setLoading(true); setError('');
     try {
       await doUpload();
-      setStep(1);
+      navigate('/edit');
       await handleGenerateLogbook();
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed.');
     } finally { setLoading(false); }
   };
 
-  // ── Modal ─────────────────────────────────────────────────────────────────
   const openModal = (x, y, block = null) => {
     setEditingBlock(block);
     setModal({ open: true, x, y });
@@ -152,7 +147,6 @@ export default function App() {
     setEditingBlock(null);
   };
 
-  // ── Edits ─────────────────────────────────────────────────────────────────
   const removeEdit = (idx) => {
     const removed = edits[idx];
     if (removed.type === 'replace') {
@@ -165,46 +159,83 @@ export default function App() {
     setEdits(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // ── AI generation ─────────────────────────────────────────────────────────
   const handleGenerateLogbook = async () => {
-    if (!aiForm.projectDesc.trim() || !aiForm.dayOverview.trim() || !aiForm.startDate || !aiForm.endDate) {
-      setError("Please fill in project desc, today's notes, start date, and end date.");
+    const dateArray = Array.isArray(aiForm.dates) 
+      ? aiForm.dates.map(d => typeof d === 'object' && d?.format ? d.format("DD/MM/YYYY") : d).filter(Boolean)
+      : (typeof aiForm.dates === 'string' ? aiForm.dates.split(',').map(d => d.trim()).filter(Boolean) : []);
+
+    dateArray.sort((a, b) => {
+      const [dayA, monthA, yearA] = a.split('/');
+      const [dayB, monthB, yearB] = b.split('/');
+      return new Date(yearA, monthA - 1, dayA) - new Date(yearB, monthB - 1, dayB);
+    });
+
+    if (!aiForm.projectDesc.trim() || !aiForm.dayOverview.trim() || dateArray.length === 0) {
+      setError("Please fill in project desc, today's notes, and at least one date.");
+      return;
+    }
+    if (dateArray.length > 20) {
+      setError("Maximum limit exceeded: You can only select up to 20 days at a time.");
       return;
     }
     setAiLoading(true); setError('');
+    
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    abortControllerRef.current = new AbortController();
+
     try {
-      const result = await generateWeekLogbook({
+      const result = await generateMonthLogbook({
         project_description: aiForm.projectDesc,
         tech_stack: aiForm.techStack,
-        week_prompt: aiForm.dayOverview,
-        start_date: aiForm.startDate,
-        end_date: aiForm.endDate,
+        month_prompt: aiForm.dayOverview,
+        dates: dateArray,
         start_pdf_day: aiForm.startPdfDay || 1,
-        previous_week_context: ""
-      });
+        previous_month_context: ""
+      }, abortControllerRef.current.signal);
 
       let allNewEdits = [];
       const startPdfDayIdx = aiForm.startPdfDay || 1;
 
-      // result.days is an array of LogbookContent representing each day
       result.days.forEach((dayContent, i) => {
         const pageNum = DAY_1_PAGE_INDEX + startPdfDayIdx + i; // i offsets each generated day onto a new page
         const dayEdits = LOGBOOK_ZONES
           .map(zone => ({ page: pageNum, x: zone.x, y: zone.y, text: dayContent[zone.key] || '', type: 'insert', font_size: 9 }))
           .filter(e => e.text);
+          
+        const dateStr = dateArray[i] || dateArray[dateArray.length - 1];
+        if (dateStr) dayEdits.push({ page: pageNum, x: 105, y: 95, text: dateStr, type: 'insert', font_size: 11 });
+        if (aiForm.timeFrom) dayEdits.push({ page: pageNum, x: 405, y: 95, text: aiForm.timeFrom, type: 'insert', font_size: 11 });
+        if (aiForm.timeTo) dayEdits.push({ page: pageNum, x: 485, y: 95, text: aiForm.timeTo, type: 'insert', font_size: 11 });
+        
+        if (aiForm.department) dayEdits.push({ page: pageNum, x: 155, y: 119, text: aiForm.department, type: 'insert', font_size: 11 });
+        if (aiForm.designation) dayEdits.push({ page: pageNum, x: 390, y: 119, text: aiForm.designation, type: 'insert', font_size: 11 });
+
         allNewEdits.push(...dayEdits);
       });
 
       setEdits(prev => [...prev, ...allNewEdits]);
       setCurrentPage(DAY_1_PAGE_INDEX + startPdfDayIdx); // Go to the first generated page
       setAiPanelOpen(false);
-      showToast(`✨ AI generated ${result.days.length} days of logbook sections!`);
+      showToast(`AI generated ${result.days.length} days of logbook sections!`);
     } catch (err) {
+      if (err.name === 'CanceledError' || err.message === 'canceled') {
+        showToast('AI generation cancelled.');
+        return;
+      }
       setError(err.response?.data?.detail || 'AI generation failed. Check your API key.');
-    } finally { setAiLoading(false); }
+    } finally { 
+      setAiLoading(false);
+      abortControllerRef.current = null;
+    }
   };
 
-  // ── Apply edits ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!aiPanelOpen && aiLoading && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, [aiPanelOpen, aiLoading]);
+
   const handleApplyEdits = async () => {
     if (!edits.length) { setError('No edits to apply.'); return; }
     setLoading(true); setError('');
@@ -216,22 +247,21 @@ export default function App() {
       });
       const data = await editPdf(filename, backendEdits);
       setOutputFilename(data.output_filename);
-      setStep(2);
+      navigate('/download');
       showToast('Edits applied! Ready to download.');
     } catch (err) {
       setError(err.response?.data?.detail || 'Edit failed.');
     } finally { setLoading(false); }
   };
 
-  // ── Reset ─────────────────────────────────────────────────────────────────
   const handleReset = () => {
-    setStep(0); setFile(null); setFilename(''); setPdfDoc(null);
+    navigate('/');
+    setFile(null); setFilename(''); setPdfDoc(null);
     setCurrentPage(1); setTotalPages(0); setEdits([]); setTextBlocks([]);
     setOutputFilename(''); setError(''); setEditingBlock(null);
     setDragging(null); setDragPos(null);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
   const aiPanelNode = (
     <AiPanel
       aiForm={aiForm} setAiForm={setAiForm}
@@ -248,7 +278,6 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="logo">
-          <span className="logo-icon">📄</span>
           <h1>OJL Logbook</h1>
           <span className="badge">PDF Editor</span>
         </div>
@@ -268,46 +297,52 @@ export default function App() {
       {error && <div className="error-bar">{error}<button onClick={() => setError('')}>✕</button></div>}
 
       <main className="main">
-        {step === 0 && (
-          <UploadStep
-            file={file} setFile={setFile}
-            loading={loading}
-            onUpload={handleUpload}
-            aiPanelOpen={aiPanelOpen} setAiPanelOpen={setAiPanelOpen}
-          >
-            {aiPanelNode}
-          </UploadStep>
-        )}
-
-        {step === 1 && (
-          <EditStep
-            canvasRef={canvasRef} wrapperRef={wrapperRef}
-            currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage}
-            currentBlocks={currentBlocks} currentEdits={currentEdits}
-            dragging={dragging} dragPos={dragPos}
-            pdfToOverlay={pdfToOverlay}
-            onCanvasClick={handleCanvasClick}
-            onBlockClick={handleBlockClick} onBlockMouseDown={onBlockMouseDown}
-            onEditMouseDown={onEditMouseDown} onEditMouseUp={onEditMouseUp}
-          >
-            <EditSidebar
-              edits={edits} removeEdit={removeEdit}
+        <Routes>
+          <Route path="/" element={
+            <UploadStep
+              file={file} setFile={setFile}
               loading={loading}
-              onApplyEdits={handleApplyEdits} onReset={handleReset}
+              onUpload={handleUpload}
               aiPanelOpen={aiPanelOpen} setAiPanelOpen={setAiPanelOpen}
             >
               {aiPanelNode}
-            </EditSidebar>
-          </EditStep>
-        )}
+            </UploadStep>
+          } />
 
-        {step === 2 && (
-          <DownloadStep
-            outputFilename={outputFilename}
-            downloadUrl={getDownloadUrl(outputFilename)}
-            onReset={handleReset}
-          />
-        )}
+          <Route path="/edit" element={
+            !file ? <Navigate to="/" replace /> : (
+              <EditStep
+                canvasRef={canvasRef} wrapperRef={wrapperRef}
+                currentPage={currentPage} totalPages={totalPages} setCurrentPage={setCurrentPage}
+                currentBlocks={currentBlocks} currentEdits={currentEdits}
+                dragging={dragging} dragPos={dragPos}
+                pdfToOverlay={pdfToOverlay}
+                onCanvasClick={handleCanvasClick}
+                onBlockClick={handleBlockClick} onBlockMouseDown={onBlockMouseDown}
+                onEditMouseDown={onEditMouseDown}
+              >
+                <EditSidebar
+                  edits={edits} removeEdit={removeEdit}
+                  loading={loading}
+                  onApplyEdits={handleApplyEdits} onReset={handleReset}
+                  aiPanelOpen={aiPanelOpen} setAiPanelOpen={setAiPanelOpen}
+                >
+                  {aiPanelNode}
+                </EditSidebar>
+              </EditStep>
+            )
+          } />
+
+          <Route path="/download" element={
+            !outputFilename ? <Navigate to="/" replace /> : (
+              <DownloadStep
+                outputFilename={outputFilename}
+                downloadUrl={getDownloadUrl(outputFilename)}
+                onReset={handleReset}
+              />
+            )
+          } />
+        </Routes>
       </main>
 
       <TextModal

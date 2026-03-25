@@ -1,6 +1,8 @@
 /**
  * AI Logbook Generator form — reused in UploadStep and EditSidebar.
  */
+import DatePicker from "react-multi-date-picker";
+
 export default function AiPanel({
     aiForm, setAiForm,
     onGenerate, onCancel,
@@ -12,7 +14,7 @@ export default function AiPanel({
     return (
         <div className="card ai-panel">
             <div className="card-header">
-                <h2>✨ {compact ? 'AI Generator' : 'AI OJL Logbook Generator'}</h2>
+                <h2>{compact ? 'AI Generator' : 'AI OJL Logbook Generator'}</h2>
                 {!compact && <p>Describe your project and what you did today — AI will fill in the logbook.</p>}
                 {compact && <p>Fill in the logbook with AI</p>}
             </div>
@@ -35,23 +37,66 @@ export default function AiPanel({
                     onChange={e => setAiForm(f => ({ ...f, techStack: e.target.value }))}
                 />
 
+                <label>Selected Dates (Pick anywhere from 1 to 20 days)</label>
+                <div style={{ marginBottom: '12px' }}>
+                    <DatePicker
+                        multiple
+                        value={aiForm.dates}
+                        onChange={dates => setAiForm(f => ({ ...f, dates }))}
+                        format="DD/MM/YYYY"
+                        placeholder="Click to select dates..."
+                        style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            height: "38px",
+                            borderRadius: "4px",
+                            border: "1px solid #e0e0e0",
+                            padding: "6px 10px",
+                            fontFamily: "inherit",
+                            fontSize: "14px"
+                        }}
+                        containerStyle={{ width: "100%" }}
+                    />
+                </div>
+
                 <div style={{ display: 'flex', gap: '10px' }}>
                     <div style={{ flex: 1 }}>
-                        <label>Start Date</label>
+                        <label>Time From</label>
                         <input
-                            type="date"
+                            type="text"
                             className="modal-input"
-                            value={aiForm.startDate}
-                            onChange={e => setAiForm(f => ({ ...f, startDate: e.target.value }))}
+                            value={aiForm.timeFrom}
+                            onChange={e => setAiForm(f => ({ ...f, timeFrom: e.target.value }))}
                         />
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label>End Date</label>
+                        <label>Time To</label>
                         <input
-                            type="date"
+                            type="text"
                             className="modal-input"
-                            value={aiForm.endDate}
-                            onChange={e => setAiForm(f => ({ ...f, endDate: e.target.value }))}
+                            value={aiForm.timeTo}
+                            onChange={e => setAiForm(f => ({ ...f, timeTo: e.target.value }))}
+                        />
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                        <label>Department</label>
+                        <input
+                            type="text"
+                            className="modal-input"
+                            value={aiForm.department}
+                            onChange={e => setAiForm(f => ({ ...f, department: e.target.value }))}
+                        />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <label>Designation</label>
+                        <input
+                            type="text"
+                            className="modal-input"
+                            value={aiForm.designation}
+                            onChange={e => setAiForm(f => ({ ...f, designation: e.target.value }))}
                         />
                     </div>
                 </div>
@@ -85,7 +130,7 @@ export default function AiPanel({
                         onClick={onUploadAndGenerate}
                         disabled={aiLoading || loading}
                     >
-                        {(aiLoading || loading) ? <><span className="spinner" /> Generating…</> : '✨ Generate & Apply'}
+                        {(aiLoading || loading) ? <><span className="spinner" /> Generating…</> : 'Generate & Apply'}
                     </button>
                 )}
                 {!showUploadAndGenerate && (
@@ -95,7 +140,7 @@ export default function AiPanel({
                         onClick={onGenerate}
                         disabled={aiLoading}
                     >
-                        {aiLoading ? <><span className="spinner" /> Generating…</> : '✨ Generate'}
+                        {aiLoading ? <><span className="spinner" /> Generating…</> : 'Generate'}
                     </button>
                 )}
             </div>

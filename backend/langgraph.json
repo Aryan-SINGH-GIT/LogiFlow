@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "logbook_agent": "./services/langgraph_service.py:month_logbook_app"
+  },
+  "env": ".env"
+}

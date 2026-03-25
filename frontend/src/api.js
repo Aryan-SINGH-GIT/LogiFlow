@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const API = axios.create({
-  baseURL: 'http://localhost:8088',
+  baseURL: 'http://localhost:8000',
 });
 
 export async function uploadPdf(file) {
@@ -23,12 +23,17 @@ export async function extractText(filename) {
   return data.blocks;
 }
 
-export async function generateWeekLogbook(payload) {
-  const { data } = await API.post('/generate-week-logbook', payload);
-  // Returns: { days: [{my_space, ...}], next_week_context: '' }
-  return data;
-}
+export const generateMonthLogbook = async (requestData) => {
+    const response = await fetch(`${API.defaults.baseURL}/generate-month-logbook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+    });
+    const data = await response.json();
+    // Returns: { days: [{my_space, ...}], next_week_context: '' }
+    return data;
+};
 
 export function getDownloadUrl(filename) {
-  return `http://localhost:8088/download/${encodeURIComponent(filename)}`;
+  return `http://localhost:8000/download/${encodeURIComponent(filename)}`;
 }

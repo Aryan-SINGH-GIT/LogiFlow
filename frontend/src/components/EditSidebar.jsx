@@ -17,7 +17,7 @@ export default function EditSidebar({
                 className="btn ai-btn ai-sidebar-btn"
                 onClick={() => setAiPanelOpen(p => !p)}
             >
-                ✨ {aiPanelOpen ? 'Close AI Generator' : 'Fill with AI'}
+                {aiPanelOpen ? 'Close AI Generator' : 'Fill with AI'}
             </button>
 
             {aiPanelOpen && children}

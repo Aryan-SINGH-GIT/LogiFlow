@@ -39,12 +39,10 @@ export default function UploadStep({
                     />
                     {file ? (
                         <div className="file-info">
-                            <span className="file-icon">📑</span>
                             <div><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(1)} KB</small></div>
                         </div>
                     ) : (
                         <>
-                            <span className="upload-icon">⬆️</span>
                             <p><strong>Click or drag PDF here</strong></p>
                             <small>Only .pdf files accepted</small>
                         </>
@@ -59,7 +57,7 @@ export default function UploadStep({
                 <div className="ai-divider"><span>or</span></div>
 
                 <button className="btn ai-btn" onClick={() => setAiPanelOpen(true)}>
-                    ✨ Make OJL Logbook with AI
+                    Make OJL Logbook with AI
                 </button>
             </div>
 

@@ -91,8 +91,6 @@ export function useDrag({
         setDragPos({ x: edit.x, y: edit.y });
     };
 
-    const onEditMouseUp = (e) => { e.stopPropagation(); };
-
     const onBlockMouseDown = (e, blockIndex) => {
         e.stopPropagation();
         e.preventDefault();
@@ -102,5 +100,5 @@ export function useDrag({
         setDragPos({ x: block.x, y: block.y });
     };
 
-    return { onEditMouseDown, onEditMouseUp, onBlockMouseDown };
+    return { onEditMouseDown, onBlockMouseDown };
 }

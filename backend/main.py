@@ -10,6 +10,9 @@ Architecture:
 """
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from schemas import GenerateLogbookRequest, GenerateMonthLogbookRequest
+from services.ai_service import generate_logbook_content
+from services.langgraph_service import run_monthly_generation_pipeline
 from dotenv import load_dotenv
 
 from routes.pdf import router as pdf_router
