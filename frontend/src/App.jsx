@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Routes, Route, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { pdfjsLib, STEPS, LOGBOOK_ZONES, DAY_1_PAGE_INDEX } from './constants';
-import { uploadPdf, editPdf, extractText, generateMonthLogbook, getDownloadUrl } from './api';
+import { uploadPdf, editPdf, extractText, generateMonthLogbook, getDownloadUrl, cancelGeneration } from './api';
 import { useCoordHelpers, usePdfRenderer } from './hooks/usePdf';
 import { useDrag } from './hooks/useDrag';
 import UploadStep from './components/UploadStep';
@@ -38,6 +38,7 @@ export default function App() {
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const abortControllerRef = useRef(null);
+  const currentTaskIdRef = useRef(null);
   const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', dates: [], timeFrom: '09:00 AM', timeTo: '7:00 PM', department: 'Engineering Department', designation: 'Backend Developer Trainee', startPdfDay: 1 });
 
   const canvasRef = useRef(null);
@@ -180,7 +181,12 @@ export default function App() {
     }
     setAiLoading(true); setError('');
     
+    // Cleanup previous if any
     if (abortControllerRef.current) abortControllerRef.current.abort();
+    if (currentTaskIdRef.current) cancelGeneration(currentTaskIdRef.current);
+
+    const taskId = crypto.randomUUID();
+    currentTaskIdRef.current = taskId;
     abortControllerRef.current = new AbortController();
 
     try {
@@ -191,7 +197,7 @@ export default function App() {
         dates: dateArray,
         start_pdf_day: aiForm.startPdfDay || 1,
         previous_month_context: ""
-      }, abortControllerRef.current.signal);
+      }, abortControllerRef.current.signal, taskId);
 
       let allNewEdits = [];
       const startPdfDayIdx = aiForm.startPdfDay || 1;
@@ -218,7 +224,7 @@ export default function App() {
       setAiPanelOpen(false);
       showToast(`AI generated ${result.days.length} days of logbook sections!`);
     } catch (err) {
-      if (err.name === 'CanceledError' || err.message === 'canceled') {
+      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
         showToast('AI generation cancelled.');
         return;
       }
@@ -226,13 +232,20 @@ export default function App() {
     } finally { 
       setAiLoading(false);
       abortControllerRef.current = null;
+      currentTaskIdRef.current = null;
     }
   };
 
   useEffect(() => {
-    if (!aiPanelOpen && aiLoading && abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
+    if (!aiPanelOpen && aiLoading) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      if (currentTaskIdRef.current) {
+        cancelGeneration(currentTaskIdRef.current);
+        currentTaskIdRef.current = null;
+      }
     }
   }, [aiPanelOpen, aiLoading]);
 

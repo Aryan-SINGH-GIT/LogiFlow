@@ -23,15 +23,32 @@ export async function extractText(filename) {
   return data.blocks;
 }
 
-export const generateMonthLogbook = async (requestData) => {
-    const response = await fetch(`${API.defaults.baseURL}/generate-month-logbook`, {
+export const generateMonthLogbook = async (requestData, signal, taskId) => {
+    const url = new URL(`${API.defaults.baseURL}/generate-month-logbook`);
+    if (taskId) url.searchParams.append('task_id', taskId);
+
+    const response = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData)
+        body: JSON.stringify(requestData),
+        signal: signal
     });
+    
+    if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw { response: { data: errData } };
+    }
+    
     const data = await response.json();
-    // Returns: { days: [{my_space, ...}], next_week_context: '' }
     return data;
+};
+
+export const cancelGeneration = async (taskId) => {
+    try {
+        await API.post(`/cancel-generation/${encodeURIComponent(taskId)}`);
+    } catch (err) {
+        console.error("Failed to call cancel endpoint:", err);
+    }
 };
 
 export function getDownloadUrl(filename) {

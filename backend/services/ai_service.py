@@ -56,6 +56,15 @@ def _wrap_section(text: str, key: str) -> str:
     return '\n'.join(lines[:cfg['max_lines']])
 
 
+DEFAULT_MODELS = [
+    'gemini-2.5-flash',
+    'gemma-3-27b-it',
+    'gemma-3-12b-it',
+    'gemma-3-4b-it',
+    'gemini-2.0-flash',
+    'gemini-2.5-flash-lite',
+]
+
 def generate_logbook_content(
     project_description: str,
     tech_stack: str,
@@ -63,12 +72,9 @@ def generate_logbook_content(
     day_number: int = 1,
 ) -> dict:
     """
-    Call Gemini to generate logbook content and return a dict of
+    Call Gemini/Gemma to generate logbook content and return a dict of
     section_key → wrapped text.
-
-    Raises:
-        ValueError: if GEMINI_API_KEY is not set.
-        RuntimeError: if the API call or JSON parsing fails.
+    Uses a robust fallback across multiple models.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -82,19 +88,24 @@ def generate_logbook_content(
         day_overview=day_overview,
     )
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-1.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=LogbookContent,
-                temperature=0.7,
-            ),
-        )
-        data: dict = json.loads(response.text)
-    except Exception as exc:
-        raise RuntimeError(f"Gemini API call failed: {exc}") from exc
+    last_exc = None
+    for model_name in DEFAULT_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=LogbookContent,
+                    temperature=0.7,
+                ),
+            )
+            data: dict = json.loads(response.text)
+            # Apply section-aware word wrapping
+            return {key: _wrap_section(val, key) for key, val in data.items()}
+        except Exception as exc:
+            print(f"[{model_name}] Generation failed: {exc}")
+            last_exc = exc
+            continue
 
-    # Apply section-aware word wrapping
-    return {key: _wrap_section(val, key) for key, val in data.items()}
+    raise RuntimeError(f"All models failed. Last error: {last_exc}")

@@ -122,7 +122,13 @@ export default function AiPanel({
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '12px', flexWrap: 'wrap' }}>
                 {onCancel && (
-                    <button className="btn ghost" onClick={onCancel}>Cancel</button>
+                    <button 
+                        className={`btn ${aiLoading ? 'danger-btn' : 'ghost'}`} 
+                        onClick={onCancel}
+                        style={aiLoading ? { flex: 1 } : {}}
+                    >
+                        {aiLoading ? 'Stop Generation' : 'Cancel'}
+                    </button>
                 )}
                 {showUploadAndGenerate && (
                     <button

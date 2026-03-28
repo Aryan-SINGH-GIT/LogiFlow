@@ -1,11 +1,12 @@
 """
 Logbook AI generation route.
 """
+import asyncio
 from fastapi import APIRouter, HTTPException
 
 from schemas import GenerateLogbookRequest, GenerateMonthLogbookRequest, MonthLogbookResponse
 from services.ai_service import generate_logbook_content
-from services.langgraph_service import run_monthly_generation_pipeline
+from services.langgraph_service import run_monthly_generation_pipeline, cancel_task
 
 router = APIRouter(tags=["Logbook"])
 
@@ -31,19 +32,34 @@ async def generate_logbook(request: GenerateLogbookRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/generate-month-logbook", response_model=MonthLogbookResponse, summary="Generate up to 20 days of logbook content using LangGraph")
-async def generate_month_logbook(request: GenerateMonthLogbookRequest):
+async def generate_month_logbook(request: GenerateMonthLogbookRequest, task_id: str = None):
     """
     Call the LangGraph pipeline to generate a month of structured logbook content
     based on the month's prompt, project description, and previous context.
     Returns generated content and a context string for next month.
     """
     try:
-        response = run_monthly_generation_pipeline(request)
+        # Pass task_id if provided by frontend
+        response = await run_monthly_generation_pipeline(request, task_id=task_id)
         return response
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+    except asyncio.CancelledError:
+        # Gracefully handle the cancellation signal
+        raise HTTPException(status_code=499, detail="Task was cancelled.")
     except Exception as e:
+        if "cancelled" in str(e).lower():
+            raise HTTPException(status_code=499, detail="Task was cancelled.")
         raise HTTPException(status_code=500, detail=f"Graph generation error: {str(e)}")
+
+
+@router.post("/cancel-generation/{task_id}", summary="Cancel an ongoing logbook generation")
+async def cancel_generation(task_id: str):
+    """
+    Signal the backend to stop a specific generation task.
+    """
+    cancel_task(task_id)
+    return {"status": "ok", "message": f"Cancellation signal sent for task {task_id}"}
 
