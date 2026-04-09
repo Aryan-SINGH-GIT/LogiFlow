@@ -57,6 +57,7 @@ class GenerateMonthLogbookRequest(BaseModel):
     dates: list[str]
     start_pdf_day: int = 1
     previous_month_context: str = ""
+    registration_no: Optional[str] = None
 
 
 class MonthLogbookResponse(BaseModel):

@@ -4,6 +4,8 @@ Logbook AI generation route.
 import asyncio
 from fastapi import APIRouter, HTTPException
 
+import os
+from database import get_db
 from schemas import GenerateLogbookRequest, GenerateMonthLogbookRequest, MonthLogbookResponse
 from services.ai_service import generate_logbook_content
 from services.langgraph_service import run_monthly_generation_pipeline, cancel_task
@@ -39,8 +41,26 @@ async def generate_month_logbook(request: GenerateMonthLogbookRequest, task_id: 
     Returns generated content and a context string for next month.
     """
     try:
+        db = get_db()
+        contexts_collection = db["contexts"]
+
+        # Inject previous context if a registration number is provided
+        if request.registration_no:
+            doc = await contexts_collection.find_one({"registration_no": request.registration_no})
+            if doc and "context" in doc:
+                request.previous_month_context = doc["context"]
+
         # Pass task_id if provided by frontend
         response = await run_monthly_generation_pipeline(request, task_id=task_id)
+        
+        # Save new context for next month
+        if request.registration_no and response.next_month_context:
+            await contexts_collection.update_one(
+                {"registration_no": request.registration_no},
+                {"$set": {"context": response.next_month_context}},
+                upsert=True
+            )
+            
         return response
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))

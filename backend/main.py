@@ -25,10 +25,22 @@ load_dotenv()
 # Ensure upload/output directories exist
 ensure_dirs()
 
+from contextlib import asynccontextmanager
+from database import get_db, close_db
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Setup database connection
+    get_db()
+    yield
+    # Cleanup
+    await close_db()
+
 app = FastAPI(
     title="OJL Logbook PDF Editor API",
     description="Edit PDF logbooks manually or generate content via AI.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Allow React dev server (Vite default port)

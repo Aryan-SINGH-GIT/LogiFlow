@@ -38,15 +38,7 @@ An AI-powered web application for viewing, editing, and generating PDF logbooks.
    # On macOS/Linux:
    source venv/bin/activate
    ```
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Set up the environment variables by creating a `.env` file in the `backend` directory:
-   ```env
-   GOOGLE_API_KEY=your_gemini_api_key_here
-   ```
-5. Start the backend development server:
+3. Install the required dependencies: 
    ```bash
     uvicorn main:app --reload
    ```

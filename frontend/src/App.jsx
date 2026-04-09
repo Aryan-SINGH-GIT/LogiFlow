@@ -39,7 +39,7 @@ export default function App() {
   const [aiLoading, setAiLoading] = useState(false);
   const abortControllerRef = useRef(null);
   const currentTaskIdRef = useRef(null);
-  const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', dates: [], timeFrom: '09:00 AM', timeTo: '7:00 PM', department: 'Engineering Department', designation: 'Backend Developer Trainee', startPdfDay: 1 });
+  const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', dates: [], timeFrom: '09:00 AM', timeTo: '7:00 PM', department: 'Engineering Department', designation: 'Backend Developer Trainee', startPdfDay: 1, learnerName: '', registrationNo: '' });
 
   const canvasRef = useRef(null);
   const wrapperRef = useRef(null);
@@ -196,10 +196,20 @@ export default function App() {
         month_prompt: aiForm.dayOverview,
         dates: dateArray,
         start_pdf_day: aiForm.startPdfDay || 1,
-        previous_month_context: ""
+        previous_month_context: "",
+        registration_no: aiForm.registrationNo || null
       }, abortControllerRef.current.signal, taskId);
 
       let allNewEdits = [];
+
+      // Add Learner's Details to Page 3
+      if (aiForm.learnerName) {
+        allNewEdits.push({ page: 3, x: 230, y: 165, text: aiForm.learnerName, type: 'insert', font_size: 14 });
+      }
+      if (aiForm.registrationNo) {
+        allNewEdits.push({ page: 3, x: 230, y: 200, text: aiForm.registrationNo, type: 'insert', font_size: 14 });
+      }
+
       const startPdfDayIdx = aiForm.startPdfDay || 1;
 
       result.days.forEach((dayContent, i) => {

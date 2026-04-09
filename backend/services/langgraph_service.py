@@ -4,6 +4,19 @@ LangGraph service for multi-day logbook generation.
 import os
 import json
 import asyncio
+import time
+import logging
+from typing import TypedDict, List, Set, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    # Setup basic logging to stdout if not done
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
 from typing import TypedDict, List, Set, Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -29,7 +42,7 @@ class MonthLogbookState(TypedDict):
     daily_dates: list[str]      # The dates for those overviews
     generated_days: list[LogbookContent]  # The structured day outputs
     next_month_context: str
-    current_day_index: int
+    next_month_context: str
     task_id: Optional[str]
 
 
@@ -54,13 +67,14 @@ def clear_task(task_id: Optional[str]):
 
 
 DEFAULT_FALLBACK = [
+    "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
-    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite-preview",
     "gemma-3-27b-it",
     "gemma-3-12b-it",
-    "gemma-2-27b-it",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash"
+    "gemma-3-4b-it",
+    "gemma-3-1b-it",
+    "gemini-2.5-flash" # Failsafe
 ]
 
 async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Optional[str] = None, preferred_models: Optional[List[str]] = None, max_retries_per_model: int = 2) -> Any:
@@ -83,23 +97,44 @@ async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Option
             if task_id and is_cancelled(task_id):
                 raise asyncio.CancelledError(f"Task {task_id} was cancelled.")
             try:
-                # Use ainvoke for async compatibility
-                return await structured_llm.ainvoke(messages)
+                # Gemma models do not support System Messages (Developer Instructions). Merge them.
+                if "gemma" in model_name:
+                    merged_messages = []
+                    sys_text = ""
+                    for msg in messages:
+                        if isinstance(msg, SystemMessage):
+                            sys_text += msg.content + "\n\n"
+                        elif isinstance(msg, HumanMessage):
+                            merged_messages.append(HumanMessage(content=sys_text + msg.content))
+                            sys_text = ""
+                        else:
+                            merged_messages.append(msg)
+                    invoke_messages = merged_messages
+                else:
+                    invoke_messages = messages
+                
+                logger.info(f"[{model_name}] Attempting invocation (attempt {attempt+1}/{max_retries_per_model})...")
+                start_time = time.time()
+                res = await structured_llm.ainvoke(invoke_messages)
+                elapsed = time.time() - start_time
+                logger.info(f"[{model_name}] Invocation successful in {elapsed:.2f}s")
+                return res
             except Exception as e:
                 last_err = e
                 err_str = str(e).lower()
                 if "429" in err_str or "resource_exhausted" in err_str or "quota" in err_str:
-                    print(f"[{model_name}] 429 quota hit. Waiting 30s to clear Minute block... (Attempt {attempt+1}/{max_retries_per_model})")
+                    logger.warning(f"[{model_name}] 429 quota hit. Waiting 30s... (Attempt {attempt+1}/{max_retries_per_model})")
                     # Check cancellation during sleep
                     for _ in range(30):
                         if task_id and is_cancelled(task_id):
                             raise asyncio.CancelledError(f"Task {task_id} was cancelled during wait.")
                         await asyncio.sleep(1)
                 else:
-                    print(f"[{model_name}] Error: {e}. Falling back to next model...")
+                    logger.error(f"[{model_name}] Error: {e}. Falling back to next model...")
                     break  # Break inner loop to try next model immediately
                     
     if isinstance(last_err, BaseException):
+        logger.error(f"Exhausted all fallback models. Last error: {last_err}")
         raise last_err
     raise Exception("Max retries and all fallback models exhausted without success.")
 
@@ -112,6 +147,9 @@ async def breakdown_prompt_node(state: MonthLogbookState) -> MonthLogbookState:
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled before breakdown.")
 
+    logger.info(f"[NODE START] breakdown_prompt_node started for task {task_id}")
+    start_time = time.time()
+    
     sys_msg = SystemMessage(content="You are an expert software engineering intern planner.")
     human_msg = HumanMessage(content=f"""
 Please breakdown the overarching monthly work description into distinct daily accomplishments.
@@ -131,7 +169,7 @@ Work Description:
         "gemini-3-flash-preview",
         "gemma-3-27b-it",
         "gemma-3-12b-it",
-        "gemini-2.5-pro"
+        "gemini-2.5-flash"
     ]
     response: BreakdownResponse = await invoke_with_fallback(BreakdownResponse, [sys_msg, human_msg], task_id, planner_models)
     
@@ -139,71 +177,78 @@ Work Description:
     overviews = [day.day_overview for day in sorted_days]
     dates = [day.date for day in sorted_days]
     
+    elapsed = time.time() - start_time
+    logger.info(f"[NODE END] breakdown_prompt_node completed in {elapsed:.2f}s. Generated {len(overviews)} daily overviews.")
+    
     return {
         **state,
         "daily_overviews": overviews,
         "daily_dates": dates,
-        "current_day_index": 0,
+        "daily_dates": dates,
         "generated_days": []
     }
 
 
-async def generate_day_node(state: MonthLogbookState) -> MonthLogbookState:
-    """Generate the detailed logbook content for the current day."""
-    idx = state["current_day_index"]
+async def generate_all_days_node(state: MonthLogbookState) -> MonthLogbookState:
+    """Generate the detailed logbook content for all days in parallel to drastically optimize time."""
     req = state["request"]
     task_id = state.get("task_id")
     
     if task_id and is_cancelled(task_id):
-        raise asyncio.CancelledError(f"Task {task_id} was cancelled before generating day {idx}.")
+        raise asyncio.CancelledError(f"Task {task_id} was cancelled before generating days.")
 
-    day_overview = state["daily_overviews"][idx]
-    current_date_str = state["daily_dates"][idx]
+    logger.info(f"[NODE START] generate_all_days_node for {len(state['daily_overviews'])} days")
+    start_time = time.time()
     
-    prompt = LOGBOOK_PROMPT_TEMPLATE.format(
-        day_number=current_date_str,
-        project_description=req.project_description,
-        tech_stack=req.tech_stack,
-        day_overview=day_overview
-    )
     writer_models = [
-        "gemini-2.5-flash", 
         "gemini-3-flash-preview", 
+        "gemini-3.1-pro-preview",
         "gemma-3-12b-it",
         "gemma-3-4b-it",
-        "gemini-2.0-flash", 
-        "gemini-2.5-flash-lite"
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash"
     ]
-    response: LogbookContent = await invoke_with_fallback(LogbookContent, [HumanMessage(content=prompt)], task_id, writer_models)
     
-    wrapped_content = LogbookContent(
-        my_space=_wrap_section(response.my_space, "my_space"),
-        tasks_carried_out=_wrap_section(response.tasks_carried_out, "tasks_carried_out"),
-        key_learnings=_wrap_section(response.key_learnings, "key_learnings"),
-        tools_used=_wrap_section(response.tools_used, "tools_used"),
-        special_achievements=_wrap_section(response.special_achievements, "special_achievements")
-    )
-    
-    new_generated_days = state["generated_days"] + [wrapped_content]
-    
-    # Check cancellation before sleep
-    if task_id and is_cancelled(task_id):
-        raise asyncio.CancelledError(f"Task {task_id} was cancelled.")
+    async def process_day(idx, day_overview, current_date_str):
+        if task_id and is_cancelled(task_id):
+            raise asyncio.CancelledError()
+            
+        prompt = LOGBOOK_PROMPT_TEMPLATE.format(
+            day_number=current_date_str,
+            project_description=req.project_description,
+            tech_stack=req.tech_stack,
+            day_overview=day_overview
+        )
         
-    await asyncio.sleep(2)
+        # Stagger the invocations slightly to avoid slamming the API at the exact same millisecond
+        await asyncio.sleep(idx * 0.5) 
+        
+        response: LogbookContent = await invoke_with_fallback(LogbookContent, [HumanMessage(content=prompt)], task_id, writer_models, max_retries_per_model=3)
+        return idx, LogbookContent(
+            my_space=_wrap_section(response.my_space, "my_space"),
+            tasks_carried_out=_wrap_section(response.tasks_carried_out, "tasks_carried_out"),
+            key_learnings=_wrap_section(response.key_learnings, "key_learnings"),
+            tools_used=_wrap_section(response.tools_used, "tools_used"),
+            special_achievements=_wrap_section(response.special_achievements, "special_achievements")
+        )
+
+    tasks = []
+    for idx, (overview, dt) in enumerate(zip(state["daily_overviews"], state["daily_dates"])):
+        tasks.append(process_day(idx, overview, dt))
+        
+    results = await asyncio.gather(*tasks)
+    
+    # Sort back by idx since asyncio.gather might theoretically complete out of order or we just want to guarantee order
+    results.sort(key=lambda x: x[0])
+    generated_days = [r[1] for r in results]
+    
+    elapsed = time.time() - start_time
+    logger.info(f"[NODE END] generate_all_days_node completed all {len(generated_days)} days in {elapsed:.2f}s")
     
     return {
         **state,
-        "generated_days": new_generated_days,
-        "current_day_index": idx + 1
+        "generated_days": generated_days
     }
-
-
-def check_if_done(state: MonthLogbookState) -> str:
-    """Conditional edge to determine if we should generate another day or finish."""
-    if state["current_day_index"] < len(state["daily_overviews"]):
-        return "generate_day"
-    return "generate_context"
 
 
 class ContextResponse(BaseModel):
@@ -217,6 +262,8 @@ async def generate_context_node(state: MonthLogbookState) -> MonthLogbookState:
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled before generating context.")
 
+    logger.info("[NODE START] generate_context_node started")
+    start_time = time.time()
     all_overviews = "\n".join([f"Day {i+1}: {overview}" for i, overview in enumerate(state["daily_overviews"])])
     
     sys_msg = SystemMessage(content="You are organizing the transition points for a multi-month project.")
@@ -228,13 +275,16 @@ This Month's Work:
 {all_overviews}
 """)
     summary_models = [
-        "gemini-3.1-flash-lite-preview", 
-        "gemini-2.5-flash-lite",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-3-flash-preview",
         "gemma-3-4b-it",
         "gemma-3-1b-it",
-        "gemini-2.0-flash-lite"
+        "gemini-2.5-flash"
     ]
     response: ContextResponse = await invoke_with_fallback(ContextResponse, [sys_msg, human_msg], task_id, summary_models)
+    
+    elapsed = time.time() - start_time
+    logger.info(f"[NODE END] generate_context_node completed in {elapsed:.2f}s")
     
     return {
         **state,
@@ -245,15 +295,12 @@ This Month's Work:
 workflow = StateGraph(MonthLogbookState)
 
 workflow.add_node("breakdown_prompt", breakdown_prompt_node)
-workflow.add_node("generate_day", generate_day_node)
+workflow.add_node("generate_all_days", generate_all_days_node)
 workflow.add_node("generate_context", generate_context_node)
 
 workflow.add_edge(START, "breakdown_prompt")
-workflow.add_edge("breakdown_prompt", "generate_day")
-workflow.add_conditional_edges("generate_day", check_if_done, {
-    "generate_day": "generate_day",
-    "generate_context": "generate_context"
-})
+workflow.add_edge("breakdown_prompt", "generate_all_days")
+workflow.add_edge("generate_all_days", "generate_context")
 workflow.add_edge("generate_context", END)
 
 month_logbook_app = workflow.compile()
@@ -269,18 +316,22 @@ async def run_monthly_generation_pipeline(request: GenerateMonthLogbookRequest, 
         daily_dates=[],
         generated_days=[],
         next_month_context="",
-        current_day_index=0,
         task_id=task_id
     )
     
+    logger.info(f"==== START PIPELINE run_monthly_generation_pipeline (task: {task_id}) ====")
+    start_time = time.time()
+    
     try:
         final_state = await month_logbook_app.ainvoke(initial_state)
+        elapsed = time.time() - start_time
+        logger.info(f"==== END PIPELINE run_monthly_generation_pipeline in {elapsed:.2f}s ====")
         return MonthLogbookResponse(
             days=final_state["generated_days"],
             next_month_context=final_state["next_month_context"]
         )
     except asyncio.CancelledError:
-        print(f"Pipeline cancelled for task: {task_id}")
+        logger.warning(f"==== PIPELINE CANCELLED for task: {task_id} after {time.time()-start_time:.2f}s ====")
         raise
     finally:
         if task_id:

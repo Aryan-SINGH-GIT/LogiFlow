@@ -37,6 +37,27 @@ export default function AiPanel({
                     onChange={e => setAiForm(f => ({ ...f, techStack: e.target.value }))}
                 />
 
+                <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                        <label>Learner's Name</label>
+                        <input
+                            className="modal-input"
+                            placeholder="e.g. John Doe"
+                            value={aiForm.learnerName || ''}
+                            onChange={e => setAiForm(f => ({ ...f, learnerName: e.target.value }))}
+                        />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <label>Registration No.</label>
+                        <input
+                            className="modal-input"
+                            placeholder="e.g. 12345678"
+                            value={aiForm.registrationNo || ''}
+                            onChange={e => setAiForm(f => ({ ...f, registrationNo: e.target.value }))}
+                        />
+                    </div>
+                </div>
+
                 <label>Selected Dates (Pick anywhere from 1 to 20 days)</label>
                 <div style={{ marginBottom: '12px' }}>
                     <DatePicker
