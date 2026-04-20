@@ -62,6 +62,7 @@ export default function AiPanel({
                 <div style={{ marginBottom: '12px' }}>
                     <DatePicker
                         multiple
+                        range
                         value={aiForm.dates}
                         onChange={dates => setAiForm(f => ({ ...f, dates }))}
                         format="DD/MM/YYYY"

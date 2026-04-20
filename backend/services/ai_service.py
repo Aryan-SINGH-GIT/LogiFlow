@@ -35,10 +35,12 @@ Generate professional, first-person content for 5 logbook sections based on:
   Today's work:         {day_overview}
 
 Rules:
-- Maximum 1-2 concise sentences per section.
+- my_space: Write 4-5 lines of detailed text.
+- tasks_carried_out: Write 2-3 lines of text.
+- key_learnings: Write 1-2 lines of text.
+- tools_used: Limit to 1 line or a few words.
+- special_achievements: Only use keywords. Say "Steady progress." if nothing notable.
 - Write in first person ("I").
-- Keep text short to fit within PDF bounding boxes.
-- For special_achievements, say "Steady progress." if nothing notable.
 
 Sections to fill:
   1. my_space             – High-level day overview / thoughts / sketches.

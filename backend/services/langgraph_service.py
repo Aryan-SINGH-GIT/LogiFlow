@@ -22,9 +22,10 @@ from pydantic import BaseModel, Field
 
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, START, END
 
-from schemas import GenerateMonthLogbookRequest, MonthLogbookResponse, LogbookContent
+from schemas import GenerateMonthLogbookRequest, MonthLogbookResponse, LogbookContent, BatchLogbookContent
 from services.ai_service import _wrap_section, LOGBOOK_PROMPT_TEMPLATE
 
 
@@ -67,14 +68,15 @@ def clear_task(task_id: Optional[str]):
 
 
 DEFAULT_FALLBACK = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
     "gemini-3.1-pro-preview",
     "gemini-3-flash-preview",
     "gemini-3.1-flash-lite-preview",
     "gemma-3-27b-it",
     "gemma-3-12b-it",
     "gemma-3-4b-it",
-    "gemma-3-1b-it",
-    "gemini-2.5-flash" # Failsafe
+    "gemma-3-1b-it"
 ]
 
 async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Optional[str] = None, preferred_models: Optional[List[str]] = None, max_retries_per_model: int = 2) -> Any:
@@ -83,14 +85,23 @@ async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Option
         raise asyncio.CancelledError(f"Task {task_id} was cancelled.")
 
     models_to_try = preferred_models if preferred_models else DEFAULT_FALLBACK
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in .env")
         
     last_err = None
     for model_name in models_to_try:
-        # Note: ChatGoogleGenerativeAI has an ainvoke method
-        llm = ChatGoogleGenerativeAI(model=model_name, api_key=api_key, temperature=0.7)
+        is_groq = model_name.startswith("llama") or model_name.startswith("mixtral")
+        
+        if is_groq:
+            api_key = os.environ.get("GROQ_API_KEY")
+            if not api_key:
+                raise ValueError("GROQ_API_KEY is not set in .env")
+            llm = ChatGroq(model=model_name, api_key=api_key, temperature=0.7)
+        else:
+            api_key = os.environ.get("GEMINI_API_KEY")
+            if not api_key:
+                raise ValueError("GEMINI_API_KEY is not set in .env")
+            # Note: ChatGoogleGenerativeAI has an ainvoke method
+            llm = ChatGoogleGenerativeAI(model=model_name, api_key=api_key, temperature=0.7)
+            
         structured_llm = llm.with_structured_output(schema=schema)
         
         for attempt in range(max_retries_per_model):
@@ -165,11 +176,12 @@ Work Description:
 {req.month_prompt}
 """)
     planner_models = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
         "gemini-3.1-pro-preview", 
         "gemini-3-flash-preview",
         "gemma-3-27b-it",
-        "gemma-3-12b-it",
-        "gemini-2.5-flash"
+        "gemma-3-12b-it"
     ]
     response: BreakdownResponse = await invoke_with_fallback(BreakdownResponse, [sys_msg, human_msg], task_id, planner_models)
     
@@ -201,49 +213,98 @@ async def generate_all_days_node(state: MonthLogbookState) -> MonthLogbookState:
     start_time = time.time()
     
     writer_models = [
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
         "gemini-3-flash-preview", 
         "gemini-3.1-pro-preview",
         "gemma-3-12b-it",
         "gemma-3-4b-it",
-        "gemini-3.1-flash-lite-preview",
-        "gemini-2.5-flash"
+        "gemini-3.1-flash-lite-preview"
     ]
     
-    async def process_day(idx, day_overview, current_date_str):
+    BATCH_LOGBOOK_PROMPT = """You are an expert software engineering intern writing daily logbook entries.
+Generate professional, first-person content for the logbook sections for multiple days based on:
+
+Project Description: {project_description}
+Tech Stack: {tech_stack}
+
+Days to generate:
+{days_text}
+
+Rules:
+- my_space: Write 4-5 lines of detailed text.
+- tasks_carried_out: Write 2-3 lines of text.
+- key_learnings: Write 1-2 lines of text.
+- tools_used: Limit to 1 line or a few words.
+- special_achievements: Only use keywords. Say "Steady progress." if nothing notable.
+- Write in first person ("I").
+
+Return a list of generated days in the exact order requested.
+"""
+    
+    chunk_size = 2
+    chunks = []
+    for i in range(0, len(state["daily_overviews"]), chunk_size):
+        chunk_overviews = state["daily_overviews"][i:i+chunk_size]
+        chunk_dates = state["daily_dates"][i:i+chunk_size]
+        chunks.append((i, chunk_overviews, chunk_dates))
+        
+    async def process_chunk(start_idx, overviews, dates):
         if task_id and is_cancelled(task_id):
             raise asyncio.CancelledError()
             
-        prompt = LOGBOOK_PROMPT_TEMPLATE.format(
-            day_number=current_date_str,
+        days_text = ""
+        for dt, ov in zip(dates, overviews):
+            days_text += f"\nDate: {dt}\nToday's work: {ov}\n---"
+            
+        prompt = BATCH_LOGBOOK_PROMPT.format(
             project_description=req.project_description,
             tech_stack=req.tech_stack,
-            day_overview=day_overview
+            days_text=days_text
         )
         
-        # Stagger the invocations slightly to avoid slamming the API at the exact same millisecond
-        await asyncio.sleep(idx * 0.5) 
+        await asyncio.sleep((start_idx / chunk_size) * 0.5) 
         
-        response: LogbookContent = await invoke_with_fallback(LogbookContent, [HumanMessage(content=prompt)], task_id, writer_models, max_retries_per_model=3)
-        return idx, LogbookContent(
-            my_space=_wrap_section(response.my_space, "my_space"),
-            tasks_carried_out=_wrap_section(response.tasks_carried_out, "tasks_carried_out"),
-            key_learnings=_wrap_section(response.key_learnings, "key_learnings"),
-            tools_used=_wrap_section(response.tools_used, "tools_used"),
-            special_achievements=_wrap_section(response.special_achievements, "special_achievements")
-        )
+        response: BatchLogbookContent = await invoke_with_fallback(BatchLogbookContent, [HumanMessage(content=prompt)], task_id, writer_models, max_retries_per_model=3)
+        
+        processed_days = []
+        for day_content in response.days[:len(dates)]: # Ensure we don't process more than requested if model hallucinates
+            processed_days.append(LogbookContent(
+                my_space=_wrap_section(day_content.my_space, "my_space"),
+                tasks_carried_out=_wrap_section(day_content.tasks_carried_out, "tasks_carried_out"),
+                key_learnings=_wrap_section(day_content.key_learnings, "key_learnings"),
+                tools_used=_wrap_section(day_content.tools_used, "tools_used"),
+                special_achievements=_wrap_section(day_content.special_achievements, "special_achievements")
+            ))
+            
+        # Pad with empty if model returned too few
+        while len(processed_days) < len(dates):
+            processed_days.append(LogbookContent(
+                my_space="Data generation failed.",
+                tasks_carried_out="Error",
+                key_learnings="Error",
+                tools_used="Error",
+                special_achievements="Error"
+            ))
+            
+        return start_idx, processed_days
 
     tasks = []
-    for idx, (overview, dt) in enumerate(zip(state["daily_overviews"], state["daily_dates"])):
-        tasks.append(process_day(idx, overview, dt))
+    for chunk in chunks:
+        tasks.append(process_chunk(*chunk))
         
     results = await asyncio.gather(*tasks)
     
-    # Sort back by idx since asyncio.gather might theoretically complete out of order or we just want to guarantee order
     results.sort(key=lambda x: x[0])
-    generated_days = [r[1] for r in results]
+    
+    generated_days = []
+    for r in results:
+        generated_days.extend(r[1])
     
     elapsed = time.time() - start_time
-    logger.info(f"[NODE END] generate_all_days_node completed all {len(generated_days)} days in {elapsed:.2f}s")
+    logger.info(f"[NODE END] generate_all_days_node completed all {len(generated_days)} days (in chunks of {chunk_size}) in {elapsed:.2f}s")
     
     return {
         **state,
@@ -275,11 +336,12 @@ This Month's Work:
 {all_overviews}
 """)
     summary_models = [
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
         "gemini-3.1-flash-lite-preview",
         "gemini-3-flash-preview",
         "gemma-3-4b-it",
-        "gemma-3-1b-it",
-        "gemini-2.5-flash"
+        "gemma-3-1b-it"
     ]
     response: ContextResponse = await invoke_with_fallback(ContextResponse, [sys_msg, human_msg], task_id, summary_models)
     

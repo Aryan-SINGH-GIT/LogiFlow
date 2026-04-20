@@ -9,3 +9,4 @@ langchain-google-genai
 langgraph
 pydantic
 motor
+langchain-groq

@@ -160,10 +160,77 @@ export default function App() {
     setEdits(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const handleModalDelete = () => {
+    if (editingBlock?._editIndex !== undefined) {
+      removeEdit(editingBlock._editIndex);
+    } else if (editingBlock) {
+      setEdits(prev => [...prev, {
+        page: editingBlock.page, x: editingBlock.x, y: editingBlock.y + editingBlock.h,
+        text: '', font_size: editingBlock.font_size || 12, type: 'replace',
+        orig_x: editingBlock.x, orig_y: editingBlock.y, orig_w: editingBlock.w, orig_h: editingBlock.h,
+        orig_text: editingBlock.text,
+      }]);
+      setTextBlocks(prev => prev.map(b => b === editingBlock ? { ...b, _edited: true, _newText: '' } : b));
+    }
+    setModal({ open: false, x: 0, y: 0 });
+    setModalText('');
+    setEditingBlock(null);
+  };
+
   const handleGenerateLogbook = async () => {
-    const dateArray = Array.isArray(aiForm.dates) 
-      ? aiForm.dates.map(d => typeof d === 'object' && d?.format ? d.format("DD/MM/YYYY") : d).filter(Boolean)
-      : (typeof aiForm.dates === 'string' ? aiForm.dates.split(',').map(d => d.trim()).filter(Boolean) : []);
+    let extractedDates = new Set();
+    if (Array.isArray(aiForm.dates)) {
+      const isMultipleRanges = aiForm.dates.length > 0 && Array.isArray(aiForm.dates[0]);
+      
+      if (isMultipleRanges) {
+        aiForm.dates.forEach(rangeArray => {
+          if (Array.isArray(rangeArray) && rangeArray.length >= 1 && rangeArray[0]?.toDate) {
+            const start = new Date(rangeArray[0].toDate());
+            const end = rangeArray.length === 2 && rangeArray[1]?.toDate ? new Date(rangeArray[1].toDate()) : start;
+            const minD = start < end ? start : end;
+            const maxD = start < end ? end : start;
+            let curr = new Date(minD);
+            curr.setHours(0,0,0,0);
+            maxD.setHours(0,0,0,0);
+            while (curr <= maxD) {
+              const dd = String(curr.getDate()).padStart(2, '0');
+              const mm = String(curr.getMonth() + 1).padStart(2, '0');
+              const yyyy = curr.getFullYear();
+              extractedDates.add(`${dd}/${mm}/${yyyy}`);
+              curr.setDate(curr.getDate() + 1);
+            }
+          }
+        });
+      } else {
+        if (aiForm.dates.length === 2 && aiForm.dates[0]?.toDate && aiForm.dates[1]?.toDate) {
+          const start = new Date(aiForm.dates[0].toDate());
+          const end = new Date(aiForm.dates[1].toDate());
+          const minD = start < end ? start : end;
+          const maxD = start < end ? end : start;
+          let curr = new Date(minD);
+          curr.setHours(0,0,0,0);
+          maxD.setHours(0,0,0,0);
+          while (curr <= maxD) {
+            const dd = String(curr.getDate()).padStart(2, '0');
+            const mm = String(curr.getMonth() + 1).padStart(2, '0');
+            const yyyy = curr.getFullYear();
+            extractedDates.add(`${dd}/${mm}/${yyyy}`);
+            curr.setDate(curr.getDate() + 1);
+          }
+        } else {
+          aiForm.dates.forEach(d => {
+            if (typeof d === 'object' && d?.format) extractedDates.add(d.format("DD/MM/YYYY"));
+            else extractedDates.add(d);
+          });
+        }
+      }
+    } else if (typeof aiForm.dates === 'string') {
+      aiForm.dates.split(',').forEach(d => {
+        const trimmed = d.trim();
+        if (trimmed) extractedDates.add(trimmed);
+      });
+    }
+    const dateArray = Array.from(extractedDates);
 
     dateArray.sort((a, b) => {
       const [dayA, monthA, yearA] = a.split('/');
@@ -375,6 +442,7 @@ export default function App() {
         setModalText={setModalText}
         onConfirm={handleModalConfirm}
         onCancel={handleModalCancel}
+        onDelete={handleModalDelete}
       />
     </div>
   );

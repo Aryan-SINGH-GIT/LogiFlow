@@ -3,7 +3,7 @@ import { useRef } from 'react';
 /**
  * Text-insertion / text-edit modal with auto-growing textarea.
  */
-export default function TextModal({ modal, editingBlock, modalText, setModalText, onConfirm, onCancel }) {
+export default function TextModal({ modal, editingBlock, modalText, setModalText, onConfirm, onCancel, onDelete }) {
     const inputRef = useRef(null);
 
     if (!modal.open) return null;
@@ -36,6 +36,11 @@ export default function TextModal({ modal, editingBlock, modalText, setModalText
                     autoFocus
                 />
                 <div className="modal-actions">
+                    {editingBlock && (
+                        <button className="btn ghost danger-btn" onClick={onDelete} style={{ marginRight: 'auto' }}>
+                            Delete
+                        </button>
+                    )}
                     <button className="btn ghost" onClick={onCancel}>Cancel</button>
                     <button className="btn primary" onClick={onConfirm} disabled={!modalText.trim()}>
                         {editingBlock ? 'Save Changes' : 'Add Text'}

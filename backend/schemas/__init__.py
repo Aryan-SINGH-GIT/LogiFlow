@@ -21,33 +21,15 @@ class GenerateLogbookRequest(BaseModel):
 class LogbookContent(BaseModel):
     """Structured AI response for logbook generation."""
     my_space: str
-"""
-Pydantic schemas for the OJL Logbook PDF Editor API.
-"""
-from pydantic import BaseModel
-from typing import Optional
-from services.pdf_service import EditItem  # re-export for route use
-
-
-class EditRequest(BaseModel):
-    filename: str
-    edits: list[EditItem]
-
-
-class GenerateLogbookRequest(BaseModel):
-    project_description: str
-    tech_stack: str
-    day_overview: str
-    day_number: Optional[int] = 1
-
-
-class LogbookContent(BaseModel):
-    """Structured AI response for logbook generation."""
-    my_space: str
     tasks_carried_out: str
     key_learnings: str
     tools_used: str
     special_achievements: str
+
+
+class BatchLogbookContent(BaseModel):
+    """Batch wrapper for generating multiple days at once."""
+    days: list[LogbookContent]
 
 
 class GenerateMonthLogbookRequest(BaseModel):
