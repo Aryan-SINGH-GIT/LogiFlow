@@ -39,27 +39,36 @@ async def generate_month_logbook(request: GenerateMonthLogbookRequest, task_id: 
     Call the LangGraph pipeline to generate a month of structured logbook content
     based on the month's prompt, project description, and previous context.
     Returns generated content and a context string for next month.
+    User-supplied API keys (gemini_api_key, groq_api_key) in the request body take priority.
     """
     try:
-        db = get_db()
-        contexts_collection = db["contexts"]
+        # Load previous month context from MongoDB if registration number provided
+        try:
+            db = get_db()
+            if db is not None and request.registration_no:
+                contexts_collection = db["contexts"]
+                doc = await contexts_collection.find_one({"registration_no": request.registration_no})
+                if doc and "context" in doc:
+                    request.previous_month_context = doc["context"]
+        except Exception as db_err:
+            # Non-fatal: context persistence is best-effort
+            pass
 
-        # Inject previous context if a registration number is provided
-        if request.registration_no:
-            doc = await contexts_collection.find_one({"registration_no": request.registration_no})
-            if doc and "context" in doc:
-                request.previous_month_context = doc["context"]
-
-        # Pass task_id if provided by frontend
+        # Run the LangGraph pipeline — uses request.gemini_api_key / request.groq_api_key
         response = await run_monthly_generation_pipeline(request, task_id=task_id)
         
-        # Save new context for next month
-        if request.registration_no and response.next_month_context:
-            await contexts_collection.update_one(
-                {"registration_no": request.registration_no},
-                {"$set": {"context": response.next_month_context}},
-                upsert=True
-            )
+        # Save new context for next month (best-effort)
+        try:
+            db = get_db()
+            if db is not None and request.registration_no and response.next_month_context:
+                contexts_collection = db["contexts"]
+                await contexts_collection.update_one(
+                    {"registration_no": request.registration_no},
+                    {"$set": {"context": response.next_month_context}},
+                    upsert=True
+                )
+        except Exception:
+            pass
             
         return response
     except ValueError as e:
@@ -67,7 +76,6 @@ async def generate_month_logbook(request: GenerateMonthLogbookRequest, task_id: 
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
     except asyncio.CancelledError:
-        # Gracefully handle the cancellation signal
         raise HTTPException(status_code=499, detail="Task was cancelled.")
     except Exception as e:
         if "cancelled" in str(e).lower():
