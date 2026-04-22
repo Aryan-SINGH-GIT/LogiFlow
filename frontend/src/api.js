@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use environment variable if set; otherwise, use Render URL in production, or localhost locally
+const isProd = import.meta.env.PROD;
+const BASE_URL = import.meta.env.VITE_API_URL || (isProd ? 'https://logiflow-cw5a.onrender.com' : 'http://localhost:8000');
 
 const API = axios.create({
   baseURL: BASE_URL,

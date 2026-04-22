@@ -52,6 +52,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:5174",  # fallback if 5173 is taken
+        "https://logi-flow-zeta.vercel.app",  # Production frontend
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",  # all Vercel preview/prod URLs
     allow_credentials=True,
