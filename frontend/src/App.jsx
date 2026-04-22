@@ -291,13 +291,9 @@ export default function App() {
 
         let allNewEdits = [];
 
-        // Add Learner's Details to Page 3
-        if (aiForm.learnerName) {
-          allNewEdits.push({ page: 3, x: 230, y: 165, text: aiForm.learnerName, type: 'insert', font_size: 14 });
-        }
-        if (aiForm.registrationNo) {
-          allNewEdits.push({ page: 3, x: 230, y: 200, text: aiForm.registrationNo, type: 'insert', font_size: 14 });
-        }
+        // Note: Learner name & registration are NOT auto-inserted.
+        // Fill those manually on the PDF canvas.
+        // Registration number is used only for MongoDB context persistence.
 
         const startPdfDayIdx = aiForm.startPdfDay || 1;
 

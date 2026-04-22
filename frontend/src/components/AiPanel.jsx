@@ -39,16 +39,12 @@ export default function AiPanel({
 
                 <div style={{ display: 'flex', gap: '10px' }}>
                     <div style={{ flex: 1 }}>
-                        <label>Learner's Name</label>
-                        <input
-                            className="modal-input"
-                            placeholder="e.g. John Doe"
-                            value={aiForm.learnerName || ''}
-                            onChange={e => setAiForm(f => ({ ...f, learnerName: e.target.value }))}
-                        />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <label>Registration No.</label>
+                        <label>
+                            Registration No.
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>
+                                (for AI context memory only)
+                            </span>
+                        </label>
                         <input
                             className="modal-input"
                             placeholder="e.g. 12345678"
