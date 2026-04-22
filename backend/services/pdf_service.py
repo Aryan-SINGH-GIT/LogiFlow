@@ -1,5 +1,6 @@
 import fitz  # PyMuPDF
 import os
+import tempfile
 from typing import List, Optional
 from pydantic import BaseModel
 
@@ -10,7 +11,6 @@ class EditItem(BaseModel):
     y: float
     text: str
     font_size: Optional[float] = 12.0
-    # For replacing existing text: cover original area first
     orig_x: Optional[float] = None
     orig_y: Optional[float] = None
     orig_w: Optional[float] = None
@@ -30,8 +30,9 @@ class TextBlock(BaseModel):
     color: List[float] = [0, 0, 0]
 
 
-UPLOADS_DIR = "uploads"
-OUTPUTS_DIR = "outputs"
+# Use system temp directory to support read-only serverless environments (Vercel)
+UPLOADS_DIR = os.path.join(tempfile.gettempdir(), "pdf_uploads")
+OUTPUTS_DIR = os.path.join(tempfile.gettempdir(), "pdf_outputs")
 
 
 def ensure_dirs():

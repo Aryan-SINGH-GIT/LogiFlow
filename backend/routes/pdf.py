@@ -8,10 +8,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException
 from fastapi.responses import FileResponse
 
 from schemas import EditRequest
-from services.pdf_service import apply_edits, extract_text_blocks
-
-UPLOADS_DIR = "uploads"
-OUTPUTS_DIR = "outputs"
+from services.pdf_service import apply_edits, extract_text_blocks, UPLOADS_DIR, OUTPUTS_DIR
 
 router = APIRouter(tags=["PDF"])
 

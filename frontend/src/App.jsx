@@ -356,7 +356,22 @@ export default function App() {
         if (e.type === 'replace') Object.assign(base, { orig_x: e.orig_x, orig_y: e.orig_y, orig_w: e.orig_w, orig_h: e.orig_h, orig_text: e.orig_text });
         return base;
       });
-      const data = await editPdf(filename, backendEdits);
+      
+      let data;
+      try {
+        data = await editPdf(filename, backendEdits);
+      } catch (err) {
+        // If 404 not found (ephemeral storage wipe on Render), re-upload and retry!
+        if (err.response?.status === 404 && file) {
+          console.warn("File wiped from ephemeral server storage. Re-uploading and retrying...");
+          const uploadData = await uploadPdf(file);
+          setFilename(uploadData.filename);
+          data = await editPdf(uploadData.filename, backendEdits);
+        } else {
+          throw err;
+        }
+      }
+      
       setOutputFilename(data.output_filename);
       navigate('/download');
       showToast('Edits applied! Ready to download.');
