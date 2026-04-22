@@ -8,16 +8,18 @@ Architecture:
   services/pdf_service.py → PyMuPDF business logic
   services/ai_service.py  → Google Gemini AI integration
 """
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from schemas import GenerateLogbookRequest, GenerateMonthLogbookRequest
-from services.ai_service import generate_logbook_content
-from services.langgraph_service import run_monthly_generation_pipeline
 from dotenv import load_dotenv
 
 from routes.pdf import router as pdf_router
 from routes.logbook import router as logbook_router
 from services.pdf_service import ensure_dirs
+from database import get_db, close_db
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env
 load_dotenv()
@@ -25,13 +27,14 @@ load_dotenv()
 # Ensure upload/output directories exist
 ensure_dirs()
 
-from contextlib import asynccontextmanager
-from database import get_db, close_db
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup database connection
-    get_db()
+    # Setup database connection — non-fatal if MongoDB is unavailable
+    try:
+        get_db()
+        logger.info("MongoDB connection established.")
+    except Exception as e:
+        logger.warning(f"MongoDB connection failed at startup: {e}. Context persistence will be disabled.")
     yield
     # Cleanup
     await close_db()
@@ -43,10 +46,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allow React dev server (Vite default port)
+# Allow React dev server (Vite default ports)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",  # fallback if 5173 is taken
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
