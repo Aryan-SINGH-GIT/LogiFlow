@@ -40,6 +40,8 @@ class GenerateMonthLogbookRequest(BaseModel):
     start_pdf_day: int = 1
     previous_month_context: str = ""
     registration_no: Optional[str] = None
+    gemini_api_key: Optional[str] = None   # User-supplied key (overrides .env)
+    groq_api_key: Optional[str] = None     # User-supplied key (overrides .env)
 
 
 class MonthLogbookResponse(BaseModel):

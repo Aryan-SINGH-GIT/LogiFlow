@@ -10,6 +10,7 @@ import EditStep from './components/EditStep';
 import EditSidebar from './components/EditSidebar';
 import DownloadStep from './components/DownloadStep';
 import TextModal from './components/TextModal';
+import ApiKeysModal from './components/ApiKeysModal';
 import './App.css';
 
 export default function App() {
@@ -37,6 +38,8 @@ export default function App() {
 
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [apiKeysModalOpen, setApiKeysModalOpen] = useState(false);
+  const [pendingGenerate, setPendingGenerate] = useState(null); // 'generate' | 'uploadAndGenerate'
   const abortControllerRef = useRef(null);
   const currentTaskIdRef = useRef(null);
   const [aiForm, setAiForm] = useState({ projectDesc: '', techStack: '', dayOverview: '', dates: [], timeFrom: '09:00 AM', timeTo: '7:00 PM', department: 'Engineering Department', designation: 'Backend Developer Trainee', startPdfDay: 1, learnerName: '', registrationNo: '' });
@@ -177,6 +180,24 @@ export default function App() {
     setEditingBlock(null);
   };
 
+  const ensureApiKeys = (onReady) => {
+    const hasGeminiKey = !!sessionStorage.getItem('gemini_api_key');
+    if (hasGeminiKey) {
+      onReady();
+    } else {
+      setPendingGenerate(() => onReady);
+      setApiKeysModalOpen(true);
+    }
+  };
+
+  const handleApiKeysSaved = () => {
+    setApiKeysModalOpen(false);
+    if (pendingGenerate) {
+      pendingGenerate();
+      setPendingGenerate(null);
+    }
+  };
+
   const handleGenerateLogbook = async () => {
     let extractedDates = new Set();
     if (Array.isArray(aiForm.dates)) {
@@ -248,69 +269,73 @@ export default function App() {
     }
     setAiLoading(true); setError('');
     
-    // Cleanup previous if any
-    if (abortControllerRef.current) abortControllerRef.current.abort();
-    if (currentTaskIdRef.current) cancelGeneration(currentTaskIdRef.current);
+    const doGenerate = async () => {
+      // Abort/cancel any previous
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+      if (currentTaskIdRef.current) cancelGeneration(currentTaskIdRef.current);
 
-    const taskId = crypto.randomUUID();
-    currentTaskIdRef.current = taskId;
-    abortControllerRef.current = new AbortController();
+      const taskId = crypto.randomUUID();
+      currentTaskIdRef.current = taskId;
+      abortControllerRef.current = new AbortController();
 
-    try {
-      const result = await generateMonthLogbook({
-        project_description: aiForm.projectDesc,
-        tech_stack: aiForm.techStack,
-        month_prompt: aiForm.dayOverview,
-        dates: dateArray,
-        start_pdf_day: aiForm.startPdfDay || 1,
-        previous_month_context: "",
-        registration_no: aiForm.registrationNo || null
-      }, abortControllerRef.current.signal, taskId);
+      try {
+        const result = await generateMonthLogbook({
+          project_description: aiForm.projectDesc,
+          tech_stack: aiForm.techStack,
+          month_prompt: aiForm.dayOverview,
+          dates: dateArray,
+          start_pdf_day: aiForm.startPdfDay || 1,
+          previous_month_context: "",
+          registration_no: aiForm.registrationNo || null
+        }, abortControllerRef.current.signal, taskId);
 
-      let allNewEdits = [];
+        let allNewEdits = [];
 
-      // Add Learner's Details to Page 3
-      if (aiForm.learnerName) {
-        allNewEdits.push({ page: 3, x: 230, y: 165, text: aiForm.learnerName, type: 'insert', font_size: 14 });
-      }
-      if (aiForm.registrationNo) {
-        allNewEdits.push({ page: 3, x: 230, y: 200, text: aiForm.registrationNo, type: 'insert', font_size: 14 });
-      }
+        // Add Learner's Details to Page 3
+        if (aiForm.learnerName) {
+          allNewEdits.push({ page: 3, x: 230, y: 165, text: aiForm.learnerName, type: 'insert', font_size: 14 });
+        }
+        if (aiForm.registrationNo) {
+          allNewEdits.push({ page: 3, x: 230, y: 200, text: aiForm.registrationNo, type: 'insert', font_size: 14 });
+        }
 
-      const startPdfDayIdx = aiForm.startPdfDay || 1;
+        const startPdfDayIdx = aiForm.startPdfDay || 1;
 
-      result.days.forEach((dayContent, i) => {
-        const pageNum = DAY_1_PAGE_INDEX + startPdfDayIdx + i; // i offsets each generated day onto a new page
-        const dayEdits = LOGBOOK_ZONES
-          .map(zone => ({ page: pageNum, x: zone.x, y: zone.y, text: dayContent[zone.key] || '', type: 'insert', font_size: 9 }))
-          .filter(e => e.text);
+        result.days.forEach((dayContent, i) => {
+          const pageNum = DAY_1_PAGE_INDEX + startPdfDayIdx + i;
+          const dayEdits = LOGBOOK_ZONES
+            .map(zone => ({ page: pageNum, x: zone.x, y: zone.y, text: dayContent[zone.key] || '', type: 'insert', font_size: 9 }))
+            .filter(e => e.text);
+            
+          const dateStr = dateArray[i] || dateArray[dateArray.length - 1];
+          if (dateStr) dayEdits.push({ page: pageNum, x: 105, y: 95, text: dateStr, type: 'insert', font_size: 11 });
+          if (aiForm.timeFrom) dayEdits.push({ page: pageNum, x: 405, y: 95, text: aiForm.timeFrom, type: 'insert', font_size: 11 });
+          if (aiForm.timeTo) dayEdits.push({ page: pageNum, x: 485, y: 95, text: aiForm.timeTo, type: 'insert', font_size: 11 });
           
-        const dateStr = dateArray[i] || dateArray[dateArray.length - 1];
-        if (dateStr) dayEdits.push({ page: pageNum, x: 105, y: 95, text: dateStr, type: 'insert', font_size: 11 });
-        if (aiForm.timeFrom) dayEdits.push({ page: pageNum, x: 405, y: 95, text: aiForm.timeFrom, type: 'insert', font_size: 11 });
-        if (aiForm.timeTo) dayEdits.push({ page: pageNum, x: 485, y: 95, text: aiForm.timeTo, type: 'insert', font_size: 11 });
-        
-        if (aiForm.department) dayEdits.push({ page: pageNum, x: 155, y: 119, text: aiForm.department, type: 'insert', font_size: 11 });
-        if (aiForm.designation) dayEdits.push({ page: pageNum, x: 390, y: 119, text: aiForm.designation, type: 'insert', font_size: 11 });
+          if (aiForm.department) dayEdits.push({ page: pageNum, x: 155, y: 119, text: aiForm.department, type: 'insert', font_size: 11 });
+          if (aiForm.designation) dayEdits.push({ page: pageNum, x: 390, y: 119, text: aiForm.designation, type: 'insert', font_size: 11 });
 
-        allNewEdits.push(...dayEdits);
-      });
+          allNewEdits.push(...dayEdits);
+        });
 
-      setEdits(prev => [...prev, ...allNewEdits]);
-      setCurrentPage(DAY_1_PAGE_INDEX + startPdfDayIdx); // Go to the first generated page
-      setAiPanelOpen(false);
-      showToast(`AI generated ${result.days.length} days of logbook sections!`);
-    } catch (err) {
-      if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
-        showToast('AI generation cancelled.');
-        return;
+        setEdits(prev => [...prev, ...allNewEdits]);
+        setCurrentPage(DAY_1_PAGE_INDEX + startPdfDayIdx);
+        setAiPanelOpen(false);
+        showToast(`AI generated ${result.days.length} days of logbook sections!`);
+      } catch (err) {
+        if (err.name === 'AbortError' || err.name === 'CanceledError' || err.message === 'canceled') {
+          showToast('AI generation cancelled.');
+          return;
+        }
+        setError(err.response?.data?.detail || 'AI generation failed. Check your API key.');
+      } finally {
+        setAiLoading(false);
+        abortControllerRef.current = null;
+        currentTaskIdRef.current = null;
       }
-      setError(err.response?.data?.detail || 'AI generation failed. Check your API key.');
-    } finally { 
-      setAiLoading(false);
-      abortControllerRef.current = null;
-      currentTaskIdRef.current = null;
-    }
+    };
+
+    ensureApiKeys(doGenerate);
   };
 
   useEffect(() => {
@@ -371,6 +396,14 @@ export default function App() {
           <h1>OJL Logbook</h1>
           <span className="badge">PDF Editor</span>
         </div>
+        <button
+          className="btn ghost sm"
+          style={{ fontSize: '0.78rem', gap: '6px' }}
+          onClick={() => setApiKeysModalOpen(true)}
+          title="Configure API Keys"
+        >
+          🔑 API Keys
+        </button>
       </header>
 
       <div className="stepper">
@@ -443,6 +476,12 @@ export default function App() {
         onConfirm={handleModalConfirm}
         onCancel={handleModalCancel}
         onDelete={handleModalDelete}
+      />
+
+      <ApiKeysModal
+        open={apiKeysModalOpen}
+        onSave={handleApiKeysSaved}
+        onClose={() => { setApiKeysModalOpen(false); setPendingGenerate(null); setAiLoading(false); }}
       />
     </div>
   );

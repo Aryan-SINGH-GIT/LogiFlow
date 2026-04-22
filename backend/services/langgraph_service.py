@@ -43,8 +43,9 @@ class MonthLogbookState(TypedDict):
     daily_dates: list[str]      # The dates for those overviews
     generated_days: list[LogbookContent]  # The structured day outputs
     next_month_context: str
-    next_month_context: str
     task_id: Optional[str]
+    user_gemini_key: Optional[str]  # Per-request user-supplied Gemini API key
+    user_groq_key: Optional[str]    # Per-request user-supplied Groq API key
 
 
 # Global set to track cancelled task IDs
@@ -79,8 +80,18 @@ DEFAULT_FALLBACK = [
     "gemma-3-1b-it"
 ]
 
-async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Optional[str] = None, preferred_models: Optional[List[str]] = None, max_retries_per_model: int = 2) -> Any:
-    """Robust fallback: cycle through models, waiting short durations on 429 errors before trying next attempt/model."""
+async def invoke_with_fallback(
+    schema: Any,
+    messages: List[Any],
+    task_id: Optional[str] = None,
+    preferred_models: Optional[List[str]] = None,
+    max_retries_per_model: int = 2,
+    user_gemini_key: Optional[str] = None,
+    user_groq_key: Optional[str] = None,
+) -> Any:
+    """Robust fallback: cycle through models, waiting short durations on 429 errors before trying next attempt/model.
+    User-supplied keys take priority over .env values.
+    """
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled.")
 
@@ -91,15 +102,15 @@ async def invoke_with_fallback(schema: Any, messages: List[Any], task_id: Option
         is_groq = model_name.startswith("llama") or model_name.startswith("mixtral")
         
         if is_groq:
-            api_key = os.environ.get("GROQ_API_KEY")
+            api_key = user_groq_key or os.environ.get("GROQ_API_KEY")
             if not api_key:
-                raise ValueError("GROQ_API_KEY is not set in .env")
+                logger.warning(f"[{model_name}] No Groq API key available — skipping.")
+                continue
             llm = ChatGroq(model=model_name, api_key=api_key, temperature=0.7)
         else:
-            api_key = os.environ.get("GEMINI_API_KEY")
+            api_key = user_gemini_key or os.environ.get("GEMINI_API_KEY")
             if not api_key:
-                raise ValueError("GEMINI_API_KEY is not set in .env")
-            # Note: ChatGoogleGenerativeAI has an ainvoke method
+                raise ValueError("No Gemini API key provided. Please supply your Gemini API key.")
             llm = ChatGoogleGenerativeAI(model=model_name, api_key=api_key, temperature=0.7)
             
         structured_llm = llm.with_structured_output(schema=schema)
@@ -154,6 +165,8 @@ async def breakdown_prompt_node(state: MonthLogbookState) -> MonthLogbookState:
     """Breakdown the single monthly prompt into distinct daily overviews between start and end dates."""
     req = state["request"]
     task_id = state["task_id"]
+    user_gemini_key = state.get("user_gemini_key")
+    user_groq_key = state.get("user_groq_key")
     
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled before breakdown.")
@@ -183,7 +196,10 @@ Work Description:
         "gemma-3-27b-it",
         "gemma-3-12b-it"
     ]
-    response: BreakdownResponse = await invoke_with_fallback(BreakdownResponse, [sys_msg, human_msg], task_id, planner_models)
+    response: BreakdownResponse = await invoke_with_fallback(
+        BreakdownResponse, [sys_msg, human_msg], task_id, planner_models,
+        user_gemini_key=user_gemini_key, user_groq_key=user_groq_key
+    )
     
     sorted_days = sorted(response.days, key=lambda d: d.date)
     overviews = [day.day_overview for day in sorted_days]
@@ -205,6 +221,8 @@ async def generate_all_days_node(state: MonthLogbookState) -> MonthLogbookState:
     """Generate the detailed logbook content for all days in parallel to drastically optimize time."""
     req = state["request"]
     task_id = state.get("task_id")
+    user_gemini_key = state.get("user_gemini_key")
+    user_groq_key = state.get("user_groq_key")
     
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled before generating days.")
@@ -265,9 +283,13 @@ Return a list of generated days in the exact order requested.
             days_text=days_text
         )
         
-        await asyncio.sleep((start_idx / chunk_size) * 0.5) 
+        await asyncio.sleep((start_idx / chunk_size) * 0.5)
         
-        response: BatchLogbookContent = await invoke_with_fallback(BatchLogbookContent, [HumanMessage(content=prompt)], task_id, writer_models, max_retries_per_model=3)
+        response: BatchLogbookContent = await invoke_with_fallback(
+            BatchLogbookContent, [HumanMessage(content=prompt)], task_id, writer_models,
+            max_retries_per_model=3,
+            user_gemini_key=user_gemini_key, user_groq_key=user_groq_key
+        )
         
         processed_days = []
         for day_content in response.days[:len(dates)]: # Ensure we don't process more than requested if model hallucinates
@@ -319,6 +341,8 @@ class ContextResponse(BaseModel):
 async def generate_context_node(state: MonthLogbookState) -> MonthLogbookState:
     """Generate a summary of this month to use for next month's context."""
     task_id = state.get("task_id")
+    user_gemini_key = state.get("user_gemini_key")
+    user_groq_key = state.get("user_groq_key")
     
     if task_id and is_cancelled(task_id):
         raise asyncio.CancelledError(f"Task {task_id} was cancelled before generating context.")
@@ -343,7 +367,10 @@ This Month's Work:
         "gemma-3-4b-it",
         "gemma-3-1b-it"
     ]
-    response: ContextResponse = await invoke_with_fallback(ContextResponse, [sys_msg, human_msg], task_id, summary_models)
+    response: ContextResponse = await invoke_with_fallback(
+        ContextResponse, [sys_msg, human_msg], task_id, summary_models,
+        user_gemini_key=user_gemini_key, user_groq_key=user_groq_key
+    )
     
     elapsed = time.time() - start_time
     logger.info(f"[NODE END] generate_context_node completed in {elapsed:.2f}s")
@@ -371,6 +398,7 @@ month_logbook_app = workflow.compile()
 async def run_monthly_generation_pipeline(request: GenerateMonthLogbookRequest, task_id: Optional[str] = None) -> MonthLogbookResponse:
     """
     Kicks off the LangGraph pipeline to generate a month of logbook content.
+    User-supplied API keys from the request take priority over environment variables.
     """
     initial_state = MonthLogbookState(
         request=request,
@@ -378,7 +406,9 @@ async def run_monthly_generation_pipeline(request: GenerateMonthLogbookRequest, 
         daily_dates=[],
         generated_days=[],
         next_month_context="",
-        task_id=task_id
+        task_id=task_id,
+        user_gemini_key=request.gemini_api_key or None,
+        user_groq_key=request.groq_api_key or None,
     )
     
     logger.info(f"==== START PIPELINE run_monthly_generation_pipeline (task: {task_id}) ====")

@@ -27,10 +27,14 @@ export const generateMonthLogbook = async (requestData, signal, taskId) => {
     const url = new URL(`${API.defaults.baseURL}/generate-month-logbook`);
     if (taskId) url.searchParams.append('task_id', taskId);
 
+    // Attach user-supplied API keys from sessionStorage
+    const gemini_api_key = sessionStorage.getItem('gemini_api_key') || undefined;
+    const groq_api_key = sessionStorage.getItem('groq_api_key') || undefined;
+
     const response = await fetch(url.toString(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData),
+        body: JSON.stringify({ ...requestData, gemini_api_key, groq_api_key }),
         signal: signal
     });
     
