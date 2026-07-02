@@ -231,7 +231,7 @@ async def generate_all_days_node(state: MonthLogbookState) -> MonthLogbookState:
     start_time = time.time()
     
     writer_models = [
-        "llama-3.3-70b-versatile",
+        "qwen/qwen3.6-27b",
         "llama-3.1-8b-instant",
         "gemini-2.5-flash",
         "gemini-2.0-flash",
